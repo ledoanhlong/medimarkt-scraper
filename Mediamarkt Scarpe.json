@@ -1,0 +1,431 @@
+{
+  "name": "Mediamarkt Scarpe",
+  "nodes": [
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "return { json: { sellerId: $json.sellerId, targetUrl: $json.targetUrl, baseUrl: $json.baseUrl, country: $json.country, language: $json.language } };"
+      },
+      "id": "d1918214-90dc-4495-8973-a08d30eaf1c6",
+      "name": "⚙️ Seller URL to Test",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3008,
+        3584
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.targetUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+            },
+            {
+              "name": "Accept",
+              "value": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            },
+            {
+              "name": "Accept-Language",
+              "value": "={{ $json.language + ',' + $json.language.split('-')[0] + ';q=0.9,en-US;q=0.8,en;q=0.7' }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "1a439ed5-53fe-4c9f-9495-d394581a5a45",
+      "name": "🌐 Fetch Seller Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3440,
+        3584
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "const html = $input.first().json.data;\n\n// --- Helper function to clean text ---\nfunction cleanText(str) {\n  if (!str) return '';\n  return str\n    .replace(/<[^>]+>/g, '')\n    .replace(/&amp;/g, '&')\n    .replace(/&lt;/g, '<')\n    .replace(/&gt;/g, '>')\n    .replace(/&quot;/g, '\"')\n    .replace(/&#39;/g, \"'\")\n    .replace(/&nbsp;/g, ' ')\n    .replace(/\\s+/g, ' ')\n    .trim();\n}\n\n// --- Extract rating data from aria-label ---\nconst ratingMatch = html.match(\n  /aria-label=\"Beoordeling:\\s*([\\d.]+)\\s*van de\\s*([\\d.]+)\\s*sterren op basis van\\s*(\\d+)\\s*recensies\"/\n);\n\nconst rating = ratingMatch ? parseFloat(ratingMatch[1]) : null;\nconst ratingOutOf = ratingMatch ? parseFloat(ratingMatch[2]) : null;\nconst reviewCount = ratingMatch ? parseInt(ratingMatch[3]) : null;\n\n// --- Extract business name from h1 tag ---\nconst h1Match = html.match(/<h1[^>]*>(.*?)<\\/h1>/is);\nconst businessName = h1Match ? cleanText(h1Match[1]) : '';\n\n// --- Extract phone from tel: href ---\nconst phoneMatch = html.match(/href=[\"']tel:([^\"']+)[\"']/);\nconst phone = phoneMatch ? phoneMatch[1].trim() : '';\n\n// --- Extract all dt/dd pairs from seller data section ---\nconst sellerDataSection = {};\nconst dtDdPattern = /<dt[^>]*>(.*?)<\\/dt>\\s*<dd[^>]*>(.*?)<\\/dd>/gis;\nlet match;\nwhile ((match = dtDdPattern.exec(html)) !== null) {\n  const key = cleanText(match[1]);\n  const value = cleanText(match[2]);\n  if (key && value) {\n    sellerDataSection[key] = value;\n  }\n}\n\n// --- Extract specific fields from sellerDataSection ---\n// Supporting Dutch, English, and German field names\nconst companyNamePatterns = ['Officiële bedrijfsnaam', 'Official company name', 'Offizieller Firmenname', 'Firmenname'];\nconst addressPatterns = ['Kantooradres', 'Office address', 'Geschäftsadresse', 'Adresse'];\nconst zipCodePatterns = ['Postcode', 'ZIP code', 'Postleitzahl', 'PLZ'];\nconst cityPatterns = ['Plaats', 'City', 'Stadt', 'Ort'];\nconst kvkPatterns = ['Kamer van Koophandel nummer', 'Chamber of Commerce number', 'Handelskammernummer'];\nconst vatPatterns = ['BTW-nummer', 'VAT number', 'USt-IdNr', 'Umsatzsteuer-Identifikationsnummer'];\nconst emailPatterns = ['E-mailadres', 'Email address', 'E-Mail-Adresse', 'Email', 'E-mail'];\n\nfunction findValue(patterns) {\n  for (const pattern of patterns) {\n    if (sellerDataSection[pattern]) {\n      return sellerDataSection[pattern];\n    }\n  }\n  return '';\n}\n\nconst companyName = findValue(companyNamePatterns);\nconst address = findValue(addressPatterns);\nconst zipCode = findValue(zipCodePatterns);\nconst city = findValue(cityPatterns);\nconst kvkNumber = findValue(kvkPatterns);\nconst vatNumber = findValue(vatPatterns);\n\n// --- Extract email with priority: seller data section first, then HTML search ---\nlet email = '';\n\n// First, try to get email from seller data section\nconst sellerEmail = findValue(emailPatterns);\n\nif (sellerEmail) {\n  email = sellerEmail;\n} else {\n  // Fall back to regex extraction from full HTML\n  const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}/g;\n  const emailMatches = html.match(emailRegex) || [];\n\n  // Enhanced filter for technical/monitoring/generic corporate emails\n  const excludePatterns = [\n    'sentry.io',\n    'analytics',\n    'tracking',\n    'monitoring',\n    'noreply',\n    'no-reply',\n    'donotreply',\n    'privacy@',\n    'info@mediamarkt',\n    'support@mediamarkt',\n    'contact@mediamarkt',\n    'service@mediamarkt',\n    'help@mediamarkt',\n    'customerservice@mediamarkt',\n    'klantenservice@mediamarkt'\n  ];\n\n  const filteredEmails = emailMatches.filter(emailAddr => {\n    const lowerEmail = emailAddr.toLowerCase();\n    \n    // Check if email contains any excluded patterns\n    const hasExcludedPattern = excludePatterns.some(pattern => \n      lowerEmail.includes(pattern.toLowerCase())\n    );\n    \n    // Check if email starts with unicode escape sequences (like \\u)\n    const startsWithUnicode = /^\\\\u/.test(emailAddr);\n    \n    return !hasExcludedPattern && !startsWithUnicode;\n  });\n\n  email = filteredEmails.length > 0 ? filteredEmails[0] : '';\n}\n\n// --- Clean HTML to plain text ---\nlet text = html\n  .replace(/<script[\\s\\S]*?<\\/script>/gi, '')\n  .replace(/<style[\\s\\S]*?<\\/style>/gi, '')\n  .replace(/<\\/(p|div|li|h[1-6]|br|tr|section|article)>/gi, '\\n')\n  .replace(/<[^>]+>/g, '')\n  .replace(/&amp;/g, '&')\n  .replace(/&lt;/g, '<')\n  .replace(/&gt;/g, '>')\n  .replace(/&quot;/g, '\"')\n  .replace(/&#39;/g, \"'\")\n  .replace(/&nbsp;/g, ' ')\n  .replace(/\\n{3,}/g, '\\n\\n')\n  .trim();\n\nreturn [{\n  json: {\n    text,\n    rating,\n    ratingOutOf,\n    reviewCount,\n    businessName,\n    email,\n    phone,\n    companyName,\n    address,\n    zipCode,\n    city,\n    kvkNumber,\n    vatNumber,\n    sellerDataSection\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3888,
+        3584
+      ],
+      "id": "c513b537-ce61-42cc-af46-195d180d0dca",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "jsCode": "const sellerIds = []; for (let i = 1000; i <= 1050; i++) { sellerIds.push({ sellerId: i, targetUrl: `https://www.mediamarkt.nl/nl/marketplace/seller/${i}`, baseUrl: 'https://www.mediamarkt.nl', country: 'NL', language: 'nl-NL' }); } return sellerIds.map(item => ({ json: item }));"
+      },
+      "id": "bcaa3970-5d6b-4a58-817c-0ed3c6193692",
+      "name": "📋 Generate Seller IDs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2544,
+        3648
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 10,
+        "options": {
+          "reset": false
+        }
+      },
+      "id": "fee95415-6c31-491b-bb91-f0d474ea5877",
+      "name": "🔄 Loop Over Batches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        2784,
+        3568
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 2
+      },
+      "id": "99026eae-b991-4658-bfb6-a0ddf4d019b2",
+      "name": "⏱️ Rate Limit Delay",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3216,
+        3584
+      ],
+      "webhookId": "72924977-ca79-459a-b7cf-b3ce4aacbcd9"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "months",
+              "triggerAtDayOfMonth": 20
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        2304,
+        3664
+      ],
+      "id": "f7ca4867-9766-4af8-b6a1-c377b9687865",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "13mNV-5u2Ln28qnvdNxaO2hVKj6m5yDedSAR3Y3Xf4N8",
+          "mode": "list",
+          "cachedResultName": "Test - MM",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/13mNV-5u2Ln28qnvdNxaO2hVKj6m5yDedSAR3Y3Xf4N8/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/13mNV-5u2Ln28qnvdNxaO2hVKj6m5yDedSAR3Y3Xf4N8/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "text",
+              "displayName": "text",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "rating",
+              "displayName": "rating",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "ratingOutOf",
+              "displayName": "ratingOutOf",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "reviewCount",
+              "displayName": "reviewCount",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "businessName",
+              "displayName": "businessName",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "companyName",
+              "displayName": "companyName",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "address",
+              "displayName": "address",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "zipCode",
+              "displayName": "zipCode",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "city",
+              "displayName": "city",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "kvkNumber",
+              "displayName": "kvkNumber",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "vatNumber",
+              "displayName": "vatNumber",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "sellerDataSection",
+              "displayName": "sellerDataSection",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        4336,
+        3616
+      ],
+      "id": "b152df7a-3941-47b7-b0fa-876508a614e4",
+      "name": "Append row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "kcT6RgSg5uglVBW3",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "pinData": {
+    "Schedule Trigger": [
+      {
+        "json": {
+          "isArtificialRecoveredEventItem": true
+        }
+      }
+    ]
+  },
+  "connections": {
+    "⚙️ Seller URL to Test": {
+      "main": [
+        [
+          {
+            "node": "⏱️ Rate Limit Delay",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🌐 Fetch Seller Page": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Append row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📋 Generate Seller IDs": {
+      "main": [
+        [
+          {
+            "node": "🔄 Loop Over Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔄 Loop Over Batches": {
+      "main": [
+        [],
+        [
+          {
+            "node": "⚙️ Seller URL to Test",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⏱️ Rate Limit Delay": {
+      "main": [
+        [
+          {
+            "node": "🌐 Fetch Seller Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "📋 Generate Seller IDs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append row in sheet": {
+      "main": [
+        [
+          {
+            "node": "🔄 Loop Over Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "678455d5-906d-498e-b051-690206039468",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "fb078235d8dbc09ee7430c7011b46e78c09b937d0e6b6ddd741c0d4396b8f896"
+  },
+  "id": "cYz5WjVvCQrUuIaT",
+  "tags": []
+}
