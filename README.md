@@ -71,9 +71,27 @@ Scrape up to 5 sellers in one call (includes a 2s delay between requests).
 
 1. Push this repo to GitHub
 2. Go to [vercel.com](https://vercel.com), import the repo
-3. Deploy — no build settings needed, Vercel auto-detects the `api/` directory
+3. Add the `PROXY_URL` environment variable (see below)
+4. Deploy — no build settings needed, Vercel auto-detects the `api/` directory
 
 Your API will be live at `https://your-project.vercel.app/api/scrape`.
+
+## Proxy Setup (Required)
+
+MediaMarkt blocks requests from datacenter IPs (like Vercel's). You need a residential proxy.
+
+In your Vercel project, go to **Settings > Environment Variables** and add:
+
+| Name        | Value                                      |
+|-------------|--------------------------------------------|
+| `PROXY_URL` | `http://username:password@proxy-host:port`  |
+
+Affordable residential proxy providers:
+- **Webshare** — rotating residential proxies, free tier available
+- **Bright Data** — residential proxies with pay-as-you-go
+- **SmartProxy** — residential rotating proxies
+
+The proxy URL format depends on the provider, but is typically `http://user:pass@host:port`.
 
 ## Using with n8n
 
