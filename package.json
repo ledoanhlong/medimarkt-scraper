@@ -1,6 +1,7 @@
 {
   "name": "mediamarkt-scraper",
   "version": "1.0.0",
+  "type": "module",
   "private": true,
   "description": "Vercel serverless API to scrape MediaMarkt seller data by seller ID",
   "engines": {
